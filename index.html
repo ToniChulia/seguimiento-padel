@@ -432,6 +432,26 @@
     font-size: 10px;
   }
   .btn-danger:active { transform: scale(0.97); }
+  .btn-export {
+    background: rgba(127,255,0,0.08);
+    border: 1px solid rgba(127,255,0,0.35);
+    color: var(--neon3);
+    margin-top: 8px;
+    font-size: 10px;
+    box-shadow: 0 0 14px rgba(127,255,0,0.08);
+  }
+  .btn-export:hover { box-shadow: 0 0 22px rgba(127,255,0,0.2); }
+  .btn-export:active { transform: scale(0.97); }
+  .export-flash {
+    text-align: center;
+    font-size: 12px;
+    color: var(--neon3);
+    letter-spacing: 1px;
+    margin-top: 6px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .export-flash.show { opacity: 1; }
 
   /* === CHART === */
   .chart-wrap {
@@ -656,8 +676,10 @@
     </div>
   </div>
 
-  <!-- RESET -->
+  <!-- EXPORT & RESET -->
   <div style="margin: 0 14px 20px;">
+    <button class="btn btn-export" onclick="exportCSV()">⬇ Exportar historial · CSV</button>
+    <div class="export-flash" id="export-flash">✓ Archivo descargado correctamente</div>
     <button class="btn btn-danger" onclick="confirmReset()">Resetear historial</button>
   </div>
 
@@ -967,6 +989,80 @@ function renderChart() {
       }
     }
   });
+}
+
+// ============ EXPORT CSV ============
+function exportCSV() {
+  const history = getHistory();
+  if (!history.length) {
+    alert('No hay partidos guardados para exportar.');
+    return;
+  }
+
+  const headers = ['Fecha','Dia semana','Pareja A','Pareja B','Sets A','Sets B','Ganador','Pelotas nuevas'];
+  const days = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+
+  const rows = history.map(m => {
+    const d = new Date(m.date + 'T12:00:00');
+    const dayName = days[d.getDay()];
+    const dateStr = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`;
+    const winner = m.winner === 'A' ? m.teamA : m.winner === 'B' ? m.teamB : 'Sin decidir';
+    const balls = m.newBalls ? 'Sí' : 'No';
+    return [dateStr, dayName, m.teamA, m.teamB, m.setsA, m.setsB, winner, balls]
+      .map(v => `"${String(v).replace(/"/g,'""')}"`).join(',');
+  });
+
+  // Summary stats block
+  const pairStats = {};
+  history.forEach(m => {
+    if (!pairStats[m.teamA]) pairStats[m.teamA] = { partidos:0, setsGanados:0, victorias:0 };
+    if (!pairStats[m.teamB]) pairStats[m.teamB] = { partidos:0, setsGanados:0, victorias:0 };
+    pairStats[m.teamA].partidos++;
+    pairStats[m.teamB].partidos++;
+    pairStats[m.teamA].setsGanados += m.setsA;
+    pairStats[m.teamB].setsGanados += m.setsB;
+    if (m.winner === 'A') pairStats[m.teamA].victorias++;
+    if (m.winner === 'B') pairStats[m.teamB].victorias++;
+  });
+
+  const summaryHeader = ['','Pareja','Partidos jugados','Victorias','Sets ganados','% Victorias'];
+  const summaryRows = Object.entries(pairStats).map(([name, s]) => {
+    const pct = s.partidos > 0 ? ((s.victorias / s.partidos) * 100).toFixed(1) + '%' : '0%';
+    return ['', name, s.partidos, s.victorias, s.setsGanados, pct]
+      .map(v => `"${String(v).replace(/"/g,'""')}"`).join(',');
+  });
+
+  const now = new Date();
+  const exportDate = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`;
+
+  const csvContent = [
+    `"PÁDEL PRO · Historial de partidos"`,
+    `"Exportado el: ${exportDate}"`,
+    `"Total partidos: ${history.length}"`,
+    '',
+    '=== PARTIDOS ===',
+    headers.map(h => `"${h}"`).join(','),
+    ...rows,
+    '',
+    '=== ESTADÍSTICAS POR PAREJA ===',
+    summaryHeader.map(h => `"${h}"`).join(','),
+    ...summaryRows,
+  ].join('\r\n');
+
+  const BOM = '\uFEFF'; // UTF-8 BOM para compatibilidad con Excel
+  const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `padel_historial_${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  const flash = document.getElementById('export-flash');
+  flash.classList.add('show');
+  setTimeout(() => flash.classList.remove('show'), 3000);
 }
 
 // ============ RESET ============
